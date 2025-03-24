@@ -34,9 +34,9 @@ class Database {
 
     private static $dbHost         = 'localhost' ;
 
-    private static $dbUsername     = 'student';
+    private static $dbUsername     = 'root';
 
-    private static $dbUserPassword = 'learn';
+    private static $dbUserPassword = '';
 
     
 
