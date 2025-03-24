@@ -1,57 +1,63 @@
 <?php
-session_start();  // Start the session to store user data after successful login
+session_start();
+require '../database/database.php'; // Include database connection
+$pdo = Database::connect();
 
-// Database connection setup
-$host = 'localhost';
-$dbname = 'dsr_db';  // replace with your actual database name
-$username = 'root';  // replace with your actual database username
-$password = '';  // replace with your actual database password
-$conn = new mysqli($host, $username, $password, $dbname);
+$error = '';
 
-// Check for connection errors
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // Sanitize user input
     $email = trim($_POST['email']);
-    $input_password = trim($_POST['password']);
-    
-    // Query the database to retrieve the salt and hashed password
-    $stmt = $conn->prepare("SELECT pwd_hash, pwd_salt, admin FROM iss_persons WHERE email = ?");
-    $stmt->bind_param("s", $email);  // Bind the email parameter
-    $stmt->execute();
-    $stmt->store_result();
-    
-    if ($stmt->num_rows > 0) {
-        $stmt->bind_result($stored_pwd_hash, $stored_salt, $admin_status);
-        $stmt->fetch();
+    $password = trim($_POST['password']);
 
-        // Generate the hash of the input password with the stored salt
-        $input_pwd_hash = md5($input_password . $stored_salt);
-        
-        // Check if the password hashes match
-        if ($input_pwd_hash === $stored_pwd_hash) {
-            // Successful login
-            $_SESSION['email'] = $email;  // Store email in session to keep track of the user
-            $_SESSION['admin'] = $admin_status;  // Store admin status in session
-            header("Location: issues_list.php");  // Redirect to issues list
-            exit;
-        } else {
-            // Incorrect password
-            $error_message = "Invalid email or password.";
+    if (!empty($email) && !empty($password)) {
+        try {
+            // Prepare SQL statement
+            $stmt = $pdo->prepare("SELECT id, fname, lname, pwd_hash, pwd_salt FROM iss_persons WHERE email = :email");
+            $stmt->bindParam(':email', $email, PDO::PARAM_STR);
+            $stmt->execute();
+            
+            if ($stmt->rowCount() == 1) {
+                $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                // Extract values
+                $id = $user['id'];
+                $fname = $user['fname'];
+                $lname = $user['lname'];
+                $stored_hash = $user['pwd_hash'];
+                $stored_salt = $user['pwd_salt'];
+
+                
+                // Hash the input password with the stored salt
+                $hashed_input_pwd = md5($password . $stored_salt);
+
+                
+                if ($hashed_input_pwd === $stored_hash) {
+                    // Authentication successful, set session variables
+                    $_SESSION['user_id'] = $id;
+                    $_SESSION['user_name'] = $fname . ' ' . $lname;
+                    $_SESSION['email'] = $email;
+
+                    // Close connection
+                    Database::disconnect();
+
+                    header("Location: issues_list.php");
+                    exit();
+                } else {
+                    $error = "Invalid email or password.";
+                }
+            } else {
+                $error = "Invalid email or password.";
+            }
+        } catch (PDOException $e) {
+            $error = "Database error: " . $e->getMessage();
         }
     } else {
-        // Email does not exist
-        $error_message = "Invalid email or password.";
+        $error = "Please enter both email and password.";
     }
-    
-    $stmt->close();
 }
 
-$conn->close();
+// Close database connection
+Database::disconnect();
 ?>
 
 <!DOCTYPE html>
@@ -59,18 +65,21 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Department Status Report (DSR)</title>
+    <title>Login - ISS</title>
 </head>
 <body>
-    <h2>Login</h2>
-    <?php if (isset($error_message)): ?>
-        <p style="color: red;"><?php echo $error_message; ?></p>
+    <h2>Issue Tracking System - Login</h2>
+    <?php if ($error): ?>
+        <p style="color: red;"><?php echo htmlspecialchars($error); ?></p>
     <?php endif; ?>
-    <form action="login.php" method="post">
-        <label for="email">Email: </label>
-        <input type="email" id="email" name="email" required><br><br>
-        <label for="password">Password: </label>
-        <input type="password" id="password" name="password" required><br><br>
+    
+    <form method="POST" action="login.php">
+        <label>Email:</label>
+        <input type="email" name="email" required>
+        <br>
+        <label>Password:</label>
+        <input type="password" name="password" required>
+        <br>
         <button type="submit">Login</button>
     </form>
 </body>
