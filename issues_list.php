@@ -9,27 +9,56 @@ $error_message = "";
 $persons_sql = "SELECT id, fname, lname FROM dsr_persons ORDER BY lname ASC";
 $persons_stmt = $pdo->query($persons_sql);
 $persons = $persons_stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Handle issue operations (Update, Delete)
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    if (isset($_POST['update_issue'])) {
-        $id = $_POST['id'];
+    if (isset($_POST['add_issue'])) {
         $short_description = trim($_POST['short_description']);
         $long_description = trim($_POST['long_description']);
         $open_date = $_POST['open_date'];
         $close_date = $_POST['close_date'];
         $priority = $_POST['priority'];
-        $org = trim($_POST['org']);
+        $org = trim($_POST['organization']);
         $project = trim($_POST['project']);
-        $per_id = $_POST['per_id'];
+        $per_id = $_POST['person_id'];
 
-        $sql = "UPDATE iss_issues SET short_description=?, long_description=?, open_date=?, close_date=?, priority=?, org=?, project=?, per_id=? WHERE id=?";
+        $sql = "INSERT INTO iss_issues (short_description, long_description, open_date, close_date, priority, org, project, per_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([$short_description, $long_description, $open_date, $close_date, $priority, $org, $project, $per_id, $id]);
+        $stmt->execute([
+            $short_description,
+            $long_description,
+            $open_date,
+            $close_date,
+            $priority,
+            $org,
+            $project,
+            $per_id
+        ]);
 
         header("Location: issues_list.php");
         exit();
     }
+}
+
+// Handle issue operations (Update, Delete)
+if (isset($_POST['update_issue'])) {
+    $id = $_POST['id'];
+    $short_description = trim($_POST['short_description']);
+    $long_description = trim($_POST['long_description']);
+    $open_date = $_POST['open_date'];
+    $close_date = $_POST['close_date'];
+    $priority = $_POST['priority'];
+    $org = trim($_POST['organization']);
+    $project = trim($_POST['project']);
+    $per_id = $_POST['person_id'];
+
+    $sql = "UPDATE iss_issues SET short_description=?, long_description=?, open_date=?, close_date=?, priority=?, org=?, project=?, per_id=? WHERE id=?";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$short_description, $long_description, $open_date, $close_date, $priority, $org, $project, $per_id, $id]);
+
+    header("Location: issues_list.php");
+    exit();
+}
+
 
     if (isset($_POST['delete_issue'])) {
         $id = $_POST['id'];
@@ -40,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         header("Location: issues_list.php");
         exit();
     }
-}
+
 
 // Fetch all issues
 $sql = "SELECT * FROM iss_issues ORDER BY open_date DESC";
@@ -114,28 +143,111 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
                             </div>
                         </div>
                     </div>
+<!-- Add Issue Modal -->
+<div class="modal fade" id="addIssueModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Issue</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form method="POST">
+                    <label for="short_description_add" class="form-label">Short Description</label>
+                    <input type="text" id="short_description_add" name="short_description" class="form-control mb-2" required>
+
+                    <label for="long_description_add" class="form-label">Long Description</label>
+                    <textarea id="long_description_add" name="long_description" class="form-control mb-2"></textarea>
+
+                    <label for="open_date_add" class="form-label">Open Date</label>
+                    <input type="date" id="open_date_add" name="open_date" class="form-control mb-2" required>
+
+                    <label for="close_date_add" class="form-label">Close Date</label>
+                    <input type="date" id="close_date_add" name="close_date" class="form-control mb-2">
+
+                    <label for="priority_add" class="form-label">Priority</label>
+                    <select id="priority_add" name="priority" class="form-control mb-2" required>
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High">High</option>
+                        <option value="Critical">Critical</option>
+                    </select>
+
+                    <label for="org_add" class="form-label">Organization</label>
+                    <input type="text" id="org_add" name="organization" class="form-control mb-2">
+
+                    <label for="project_add" class="form-label">Project</label>
+                    <input type="text" id="project_add" name="project" class="form-control mb-2">
+
+                    <label for="per_id_add" class="form-label">Person ID</label>
+                    <input type="number" id="per_id_add" name="person_id" class="form-control mb-2" required>
+
+                    <button type="submit" name="add_issue" class="btn btn-primary">Add Issue</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 
                     <!-- Update Modal -->
-                    <div class="modal fade" id="updateIssue<?= $issue['id']; ?>" tabindex="-1">
-                        <div class="modal-dialog">
-                            <div class="modal-content">
-                                <div class="modal-header">
-                                    <h5 class="modal-title">Update Issue</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                </div>
-                                <div class="modal-body">
-                                    <form method="POST">
-                                        <input type="hidden" name="id" value="<?= $issue['id']; ?>">
-                                        <input type="text" name="short_description" class="form-control mb-2" value="<?= htmlspecialchars($issue['short_description']); ?>" required>
-                                        <textarea name="long_description" class="form-control mb-2"><?= htmlspecialchars($issue['long_description']); ?></textarea>
-                                        <input type="date" name="open_date" class="form-control mb-2" value="<?= $issue['open_date']; ?>" required>
-                                        <input type="date" name="close_date" class="form-control mb-2" value="<?= $issue['close_date']; ?>">
-                                        <button type="submit" name="update_issue" class="btn btn-primary">Save Changes</button>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+<div class="modal fade" id="updateIssue<?= $issue['id']; ?>" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Update Issue</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form method="POST">
+                    <!-- Hidden ID -->
+                    <input type="hidden" name="id" value="<?= $issue['id']; ?>">
+
+                    <!-- Short Description -->
+                    <label for="short_description_<?= $issue['id']; ?>" class="form-label">Short Description</label>
+                    <input type="text" id="short_description_<?= $issue['id']; ?>" name="short_description" class="form-control mb-2" value="<?= htmlspecialchars($issue['short_description'] ?? ''); ?>" required>
+
+                    <!-- Long Description -->
+                    <label for="long_description_<?= $issue['id']; ?>" class="form-label">Long Description</label>
+                    <textarea id="long_description_<?= $issue['id']; ?>" name="long_description" class="form-control mb-2"><?= htmlspecialchars($issue['long_description'] ?? ''); ?></textarea>
+
+                    <!-- Open Date -->
+                    <label for="open_date_<?= $issue['id']; ?>" class="form-label">Open Date</label>
+                    <input type="date" id="open_date_<?= $issue['id']; ?>" name="open_date" class="form-control mb-2" value="<?= $issue['open_date'] ?? ''; ?>" required>
+
+                    <!-- Close Date -->
+                    <label for="close_date_<?= $issue['id']; ?>" class="form-label">Close Date</label>
+                    <input type="date" id="close_date_<?= $issue['id']; ?>" name="close_date" class="form-control mb-2" value="<?= $issue['close_date'] ?? ''; ?>">
+
+                    <!-- Priority -->
+                    <label for="priority_<?= $issue['id']; ?>" class="form-label">Priority</label>
+                    <select id="priority_<?= $issue['id']; ?>" name="priority" class="form-control mb-2" required>
+                        <option value="Low" <?= ($issue['priority'] ?? '') === 'Low' ? 'selected' : ''; ?>>Low</option>
+                        <option value="Medium" <?= ($issue['priority'] ?? '') === 'Medium' ? 'selected' : ''; ?>>Medium</option>
+                        <option value="High" <?= ($issue['priority'] ?? '') === 'High' ? 'selected' : ''; ?>>High</option>
+                        <option value="Critical" <?= ($issue['priority'] ?? '') === 'Critical' ? 'selected' : ''; ?>>Critical</option>
+                    </select>
+
+                    <!-- Organization -->
+                    <label for="org_<?= $issue['id']; ?>" class="form-label">Organization</label>
+                    <input type="text" id="org_<?= $issue['id']; ?>" name="organization" class="form-control mb-2" value="<?= htmlspecialchars($issue['org'] ?? ''); ?>">
+
+                    <!-- Project -->
+                    <label for="project_<?= $issue['id']; ?>" class="form-label">Project</label>
+                    <input type="text" id="project_<?= $issue['id']; ?>" name="project" class="form-control mb-2" value="<?= htmlspecialchars($issue['project'] ?? ''); ?>">
+
+                    <!-- Person ID -->
+                    <label for="per_id_<?= $issue['id']; ?>" class="form-label">Person ID</label>
+                    <input type="number" id="per_id_<?= $issue['id']; ?>" name="person_id" class="form-control mb-2" value="<?= htmlspecialchars($issue['per_id'] ?? ''); ?>" required>
+
+                    <!-- Submit Button -->
+                    <button type="submit" name="update_issue" class="btn btn-primary">Save Changes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+
 
                     <!-- Delete Modal -->
                     <div class="modal fade" id="deleteIssue<?= $issue['id']; ?>" tabindex="-1">
