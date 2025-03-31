@@ -10,6 +10,38 @@ $persons_sql = "SELECT id, fname, lname FROM dsr_persons ORDER BY lname ASC";
 $persons_stmt = $pdo->query($persons_sql);
 $persons = $persons_stmt->fetchAll(PDO::FETCH_ASSOC);
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+
+    if(isset($_FILES['pdf_attachment'])){
+        $fileTmpPath=$_FILES['pdf_attachment']['tmp_name'];
+        $fileName=$_FILES['pdf_attachment']['name'];
+        $fileSize=$_FILES['pdf_attachment']['size'];
+        $fileType=$_FILES['pdf_attachment']['type'];
+        $fileNameCmps=explode(".",$fileName);
+        $fileExtension=strtolower(end($fileNameCmps));
+        if($fileExtension !=='pdf'){
+            die("Only PDF files allowed");
+        }
+        if($fileSize>2*1024*1024){
+            die("File size exceeds 2MB limit");
+
+        }
+        $newFileName=MD5(time() . $fileName).'.' . $fileExtension;
+        $uploadFileDir='./uploads/';
+        $dest_path=$uploadFileDir . $newFileName;
+
+        if(!is_dir($uploadFileDir)){
+            mkdir($uploadFileDir,0755,true);
+        }
+        if(move_uploaded_file($fileTmpPath,$dest_path)){
+            $attachmentPath=$dest_path;
+
+        }
+        else
+            die("error moving file");
+        
+    }
+
+
     if (isset($_POST['add_issue'])) {
         $short_description = trim($_POST['short_description']);
         $long_description = trim($_POST['long_description']);
@@ -19,9 +51,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $org = trim($_POST['organization']);
         $project = trim($_POST['project']);
         $per_id = $_POST['person_id'];
+        $pdf_attachment=$_POST['pdf_attachment'];
 
-        $sql = "INSERT INTO iss_issues (short_description, long_description, open_date, close_date, priority, org, project, per_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO iss_issues (short_description, long_description, open_date, close_date, priority, org, project, per_id,pdf_attachment)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?,?)";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             $short_description,
@@ -31,7 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $priority,
             $org,
             $project,
-            $per_id
+            $per_id,
+            $pdf_attachment
         ]);
 
         header("Location: issues_list.php");
@@ -181,6 +215,11 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
 
                     <label for="per_id_add" class="form-label">Person ID</label>
                     <input type="number" id="per_id_add" name="person_id" class="form-control mb-2" required>
+
+
+                    <label for="pdf_attachement">PDF</label>
+                    <input type="file" name="pdf_attachment" class="form-control mb-2" 
+                    accept="application/pdf"/>
 
                     <button type="submit" name="add_issue" class="btn btn-primary">Add Issue</button>
                 </form>
