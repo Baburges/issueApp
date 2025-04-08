@@ -3,6 +3,7 @@ session_start();
 require '../database/database.php'; // Include database connection
 $pdo = Database::connect();
 
+
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
@@ -12,7 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (!empty($email) && !empty($password)) {
         try {
             // Prepare SQL statement
-            $stmt = $pdo->prepare("SELECT id, fname, lname, pwd_hash, pwd_salt FROM iss_persons WHERE email = :email");
+            $stmt = $pdo->prepare("SELECT id, fname, lname, pwd_hash, pwd_salt,admin FROM iss_persons WHERE email = :email");
+
             $stmt->bindParam(':email', $email, PDO::PARAM_STR);
             $stmt->execute();
             
@@ -25,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $lname = $user['lname'];
                 $stored_hash = $user['pwd_hash'];
                 $stored_salt = $user['pwd_salt'];
-
+                $admin=$user['admin'];
                 
                 // Hash the input password with the stored salt
                 $hashed_input_pwd = md5($password . $stored_salt);
@@ -36,6 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $_SESSION['user_id'] = $id;
                     $_SESSION['user_name'] = $fname . ' ' . $lname;
                     $_SESSION['email'] = $email;
+                    $_SESSION['admin']=$admin;
 
                     // Close connection
                     Database::disconnect();
