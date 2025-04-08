@@ -1,5 +1,12 @@
 <?php
 session_start();
+if (!isset($_SESSION['user_id'])) {
+    session_destroy();
+    header("Location: login.php");
+    exit(); // ← without this, the rest of the page still loads!
+}
+
+
 require '../database/database.php'; // Database connection
 
 $pdo = Database::connect();
@@ -51,7 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $org = trim($_POST['organization']);
         $project = trim($_POST['project']);
         $per_id = $_POST['person_id'];
-        $pdf_attachment=$_POST['pdf_attachment'];
+        $pdf_attachment = isset($attachmentPath) ? $attachmentPath : null;
+
 
         $sql = "INSERT INTO iss_issues (short_description, long_description, open_date, close_date, priority, org, project, per_id,pdf_attachment)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?,?)";
@@ -75,6 +83,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 // Handle issue operations (Update, Delete)
 if (isset($_POST['update_issue'])) {
+    if (!($_SESSION['admin'] == "Y" || $_SESSION['user_id'] == $_POST['person_id'])) {
+        header("Location:issues_list.php");
+        exit();
+    }
+       
     $id = $_POST['id'];
     $short_description = trim($_POST['short_description']);
     $long_description = trim($_POST['long_description']);
@@ -122,9 +135,12 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
     <div class="container mt-3">
         <h2 class="text-center">Issues List</h2>
 
+
+       
         <!-- "+" Button to Add Issue -->
         <div class="d-flex justify-content-between align-items-center mt-3">
             <h3>All Issues</h3>
+            <a href="logout.php" class="btn btn-warning">Logout</a>
             <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addIssueModal">+</button>
         </div>
 
@@ -150,8 +166,10 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
                         <td>
                             <!-- R, U, D Buttons -->
                             <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#readIssue<?= $issue['id']; ?>">R</button>
+                            <?php if($_SESSION['user_id'] == $issue['per_id'] || $_SESSION['admin'] == "Y") { ?>
                             <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#updateIssue<?= $issue['id']; ?>">U</button>
                             <button class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteIssue<?= $issue['id']; ?>">D</button>
+                            <?php } ?>
                         </td>
                     </tr>
 
@@ -186,7 +204,7 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                     <label for="short_description_add" class="form-label">Short Description</label>
                     <input type="text" id="short_description_add" name="short_description" class="form-control mb-2" required>
 
