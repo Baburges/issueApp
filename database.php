@@ -64,7 +64,9 @@ class Database {
 
             try {
 
-                self::$connection =  new PDO( "mysql:host=".self::$dbHost.";"."dbname=".self::$dbName, self::$dbUsername, self::$dbUserPassword);  
+                self::$connection = new PDO("mysql:host=127.0.0.1;dbname=" . self::$dbName, self::$dbUsername, self::$dbUserPassword);
+
+
 
             }
 
@@ -93,3 +95,4 @@ class Database {
 } // end class: Database
 
 ?>
+
