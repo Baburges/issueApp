@@ -1,54 +1,118 @@
 <?php
+// Start session and ensure the user is logged in
 session_start();
 if (!isset($_SESSION['user_id'])) {
     session_destroy();
     header("Location: login.php");
-    exit(); // ← without this, the rest of the page still loads!
+    exit(); // Without exit(), the page would continue running
 }
 
-
-require '../database/database.php'; // Database connection
-
+// Connect to the database
+require '../database/database.php';
 $pdo = Database::connect();
 $error_message = "";
 
-// Fetch persons for dropdown list
+// Set filter (open or all issues) and search term if given
+$filter = $_GET['filter'] ?? 'open';
+$search_name = trim($_GET['search_name'] ?? '');
+
+// Handle POST form submissions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    
+    // Add a new comment
+    if (isset($_POST['add_comment'])) {
+        $short = trim($_POST['short_comment']);
+        $long = trim($_POST['long_comment']);
+        $issue_id = (int)$_POST['issue_id'];
+        $date = date('Y-m-d');
+        $per_id = $_SESSION['user_id']; // Logged-in user
+
+        if ($short && $long) {
+            $stmt = $pdo->prepare("INSERT INTO iss_comments (short_comment, long_comment, posted_date, iss_id, per_id) VALUES (?, ?, ?, ?, ?)");
+            $stmt->execute([$short, $long, $date, $issue_id, $per_id]);
+            header("Location: issues_list.php");
+            exit();
+        }
+    }
+
+    // Delete a comment
+    if (isset($_POST['delete_comment'])) {
+        $comment_id = (int)$_POST['comment_id'];
+        $stmt = $pdo->prepare("DELETE FROM iss_comments WHERE id = ?");
+        $stmt->execute([$comment_id]);
+        header("Location: issues_list.php");
+        exit();
+    }
+
+    // Start editing a comment (redirect to open the edit form)
+    if (isset($_POST['edit_comment_modal'])) {
+        $comment_id = (int)$_POST['comment_id'];
+        $issue_id = (int)$_POST['issue_id'];
+
+        header("Location: issues_list.php?filter=open&edit_comment=$comment_id&issue_id=$issue_id");
+        exit();
+    }
+
+    // Save edited comment
+    if (isset($_POST['save_comment_edit'])) {
+        $comment_id = (int)$_POST['comment_id'];
+        $short = trim($_POST['short_comment']);
+        $long = trim($_POST['long_comment']);
+
+        if ($short && $long) {
+            $stmt = $pdo->prepare("UPDATE iss_comments SET short_comment = ?, long_comment = ? WHERE id = ?");
+            $stmt->execute([$short, $long, $comment_id]);
+        }
+
+        unset($_SESSION['edit_comment_id']); // Clear any editing session
+        header("Location: issues_list.php");
+        exit();
+    }
+}
+
+// Fetch all persons (for dropdowns, assigning issues)
 $persons_sql = "SELECT id, fname, lname FROM dsr_persons ORDER BY lname ASC";
 $persons_stmt = $pdo->query($persons_sql);
 $persons = $persons_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Handle file uploads and adding a new issue
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
-    if(isset($_FILES['pdf_attachment'])){
-        $fileTmpPath=$_FILES['pdf_attachment']['tmp_name'];
-        $fileName=$_FILES['pdf_attachment']['name'];
-        $fileSize=$_FILES['pdf_attachment']['size'];
-        $fileType=$_FILES['pdf_attachment']['type'];
-        $fileNameCmps=explode(".",$fileName);
-        $fileExtension=strtolower(end($fileNameCmps));
-        if($fileExtension !=='pdf'){
+    // Handle file attachment (PDF)
+    if (isset($_FILES['pdf_attachment']) && $_FILES['pdf_attachment']['error'] == UPLOAD_ERR_OK) {
+        $fileTmpPath = $_FILES['pdf_attachment']['tmp_name'];
+        $fileName = $_FILES['pdf_attachment']['name'];
+        $fileSize = $_FILES['pdf_attachment']['size'];
+        $fileType = $_FILES['pdf_attachment']['type'];
+        $fileNameCmps = explode(".", $fileName);
+        $fileExtension = strtolower(end($fileNameCmps));
+
+        // Validate file type and size
+        if ($fileExtension !== 'pdf') {
             die("Only PDF files allowed");
         }
-        if($fileSize>2*1024*1024){
+        if ($fileSize > 2 * 1024 * 1024) {
             die("File size exceeds 2MB limit");
-
         }
-        $newFileName=MD5(time() . $fileName).'.' . $fileExtension;
-        $uploadFileDir='./uploads/';
-        $dest_path=$uploadFileDir . $newFileName;
 
-        if(!is_dir($uploadFileDir)){
-            mkdir($uploadFileDir,0755,true);
-        }
-        if(move_uploaded_file($fileTmpPath,$dest_path)){
-            $attachmentPath=$dest_path;
+        // Save the uploaded file
+        $newFileName = md5(time() . $fileName) . '.' . $fileExtension;
+        $uploadFileDir = './uploads/';
+        $dest_path = $uploadFileDir . $newFileName;
 
+        if (!is_dir($uploadFileDir)) {
+            mkdir($uploadFileDir, 0755, true);
         }
-        else
-            die("error moving file");
-        
+        if (move_uploaded_file($fileTmpPath, $dest_path)) {
+            $attachmentPath = $dest_path;
+        } else {
+            die("Error moving file");
+        }
+    } else {
+        $attachmentPath = null; // No file uploaded
     }
 
-
+    // Handle adding an issue
     if (isset($_POST['add_issue'])) {
         $short_description = trim($_POST['short_description']);
         $long_description = trim($_POST['long_description']);
@@ -57,12 +121,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $priority = $_POST['priority'];
         $org = trim($_POST['organization']);
         $project = trim($_POST['project']);
-        $per_id = $_POST['person_id'];
+        $per_id = $_POST['person_id']; // Assigned person
         $pdf_attachment = isset($attachmentPath) ? $attachmentPath : null;
 
-
-        $sql = "INSERT INTO iss_issues (short_description, long_description, open_date, close_date, priority, org, project, per_id,pdf_attachment)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?,?)";
+        $sql = "INSERT INTO iss_issues (short_description, long_description, open_date, close_date, priority, org, project, per_id, pdf_attachment)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             $short_description,
@@ -81,14 +144,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// Handle issue operations (Update, Delete)
+// Handle updating or deleting issues
 if (isset($_POST['update_issue'])) {
-    if (!($_SESSION['admin'] == "Y" || $_SESSION['user_id'] == $_POST['person_id'])) {
-        header("Location:issues_list.php");
+    $id = (int)$_POST['id'];
+
+    // Confirm user can edit the issue
+    $stmt = $pdo->prepare("SELECT per_id FROM iss_issues WHERE id = ?");
+    $stmt->execute([$id]);
+    $issue = $stmt->fetch();
+
+    if (!$issue) {
+        header("Location: issues_list.php");
         exit();
     }
-       
-    $id = $_POST['id'];
+
+    if (!($_SESSION['admin'] == "Y" || $_SESSION['user_id'] == $issue['per_id'])) {
+        header("Location: issues_list.php");
+        exit();
+    }
+
+    // Update issue
     $short_description = trim($_POST['short_description']);
     $long_description = trim($_POST['long_description']);
     $open_date = $_POST['open_date'];
@@ -98,30 +173,84 @@ if (isset($_POST['update_issue'])) {
     $project = trim($_POST['project']);
     $per_id = $_POST['person_id'];
 
-    $sql = "UPDATE iss_issues SET short_description=?, long_description=?, open_date=?, close_date=?, priority=?, org=?, project=?, per_id=? WHERE id=?";
+    $sql = "UPDATE iss_issues 
+            SET short_description=?, long_description=?, open_date=?, close_date=?, 
+                priority=?, org=?, project=?, per_id=? 
+            WHERE id=?";
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([$short_description, $long_description, $open_date, $close_date, $priority, $org, $project, $per_id, $id]);
+    $stmt->execute([
+        $short_description, $long_description, $open_date, $close_date,
+        $priority, $org, $project, $per_id, $id
+    ]);
 
     header("Location: issues_list.php");
     exit();
 }
 
+// Handle delete issue
+if (isset($_POST['delete_issue'])) {
+    $id = $_POST['id'];
 
-    if (isset($_POST['delete_issue'])) {
-        $id = $_POST['id'];
-        $sql = "DELETE FROM iss_issues WHERE id=?";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([$id]);
+    $sql = "DELETE FROM iss_issues WHERE id=?";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$id]);
 
-        header("Location: issues_list.php");
-        exit();
+    header("Location: issues_list.php");
+    exit();
+}
+
+// Fetch all issues for display, with optional search and filter
+$filter = $_GET['filter'] ?? 'open';
+$search_name = trim($_GET['search_name'] ?? '');
+
+if ($filter === 'all') {
+    $sql = "
+        SELECT i.*, p.fname, p.lname
+        FROM iss_issues i
+        LEFT JOIN iss_persons p ON i.per_id = p.id
+    ";
+} else {
+    $sql = "
+        SELECT i.*, p.fname, p.lname
+        FROM iss_issues i
+        LEFT JOIN iss_persons p ON i.per_id = p.id
+        WHERE (i.close_date IS NULL OR i.close_date = '')
+    ";
+}
+
+// Add search filter for person's name
+if (!empty($search_name)) {
+    $search = "%$search_name%";
+    if (strpos($sql, 'WHERE') !== false) {
+        $sql .= " AND (p.fname LIKE :search OR p.lname LIKE :search)";
+    } else {
+        $sql .= " WHERE (p.fname LIKE :search OR p.lname LIKE :search)";
     }
+}
 
+// Order by priority and then date
+$sql .= "
+    ORDER BY 
+        CASE 
+            WHEN i.priority = 'Critical' THEN 1
+            WHEN i.priority = 'High' THEN 2
+            WHEN i.priority = 'Medium' THEN 3
+            WHEN i.priority = 'Low' THEN 4
+            ELSE 5
+        END,
+        i.open_date DESC
+";
 
-// Fetch all issues
-$sql = "SELECT * FROM iss_issues ORDER BY open_date DESC";
-$issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+// Execute final SQL
+$stmt = $pdo->prepare($sql);
+if (!empty($search_name)) {
+    $stmt->bindValue(':search', $search);
+}
+$stmt->execute();
+$issues = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
+
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -130,19 +259,33 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Issues List - DSR</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+
 </head>
 <body>
     <div class="container mt-3">
         <h2 class="text-center">Issues List</h2>
-
+        <div class="d-flex justify-content-between align-items-center mt-3">
+    <h3>Issues</h3>
+    <div>
+    <a href="issues_list.php?filter=all" class="btn btn-<?= ($filter === 'all') ? 'primary' : 'secondary' ?> btn-sm">All Issues</a>
+        <a href="issues_list.php?filter=open" class="btn btn-<?= ($filter === 'open') ? 'primary' : 'secondary' ?> btn-sm">Open Issues</a>
+        
+        <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addIssueModal">Add Issue</button>
+        <a href="persons.php" class="btn btn-info btn-sm">Manage Persons</a>
+        <a href="logout.php" class="btn btn-warning btn-sm">Logout</a>
+       
 
        
-        <!-- "+" Button to Add Issue -->
-        <div class="d-flex justify-content-between align-items-center mt-3">
-            <h3>All Issues</h3>
-            <a href="logout.php" class="btn btn-warning">Logout</a>
-            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addIssueModal">+</button>
-        </div>
+        
+    </div>
+</div>
+<form method="GET" class="d-flex mb-3">
+    <input type="hidden" name="filter" value="<?= htmlspecialchars($filter) ?>"> <!-- 🆕 preserve filter -->
+
+    <input type="text" name="search_name" class="form-control me-2" placeholder="Search by Person's Name" value="<?= htmlspecialchars($_GET['search_name'] ?? '') ?>">
+    <button type="submit" class="btn btn-primary">Search</button>
+</form>
 
         <table class="table table-striped table-sm mt-2">
             <thead class="table-dark">
@@ -152,6 +295,7 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
                     <th>Open Date</th>
                     <th>Close Date</th>
                     <th>Priority</th>
+                    <th>Person</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -162,7 +306,20 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
                         <td><?= htmlspecialchars($issue['short_description']); ?></td>
                         <td><?= htmlspecialchars($issue['open_date']); ?></td>
                         <td><?= htmlspecialchars($issue['close_date']); ?></td>
+                        
                         <td><?= htmlspecialchars($issue['priority']); ?></td>
+                        <td>
+<?php
+    $fullName = '';
+    if (!empty($issue['fname']) || !empty($issue['lname'])) {
+        $fullName = htmlspecialchars(trim(($issue['fname'] ?? '') . ' ' . ($issue['lname'] ?? '')));
+    } else {
+        $fullName = '<i>Unknown</i>';
+    }
+    echo $fullName;
+?>
+</td>
+
                         <td>
                             <!-- R, U, D Buttons -->
                             <button class="btn btn-info btn-sm" data-bs-toggle="modal" data-bs-target="#readIssue<?= $issue['id']; ?>">R</button>
@@ -182,16 +339,99 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
                                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                 </div>
                                 <div class="modal-body">
-                                    <p><strong>ID:</strong> <?= htmlspecialchars($issue['id']); ?></p>
-                                    <p><strong>Short Description:</strong> <?= htmlspecialchars($issue['short_description']); ?></p>
-                                    <p><strong>Long Description:</strong> <?= htmlspecialchars($issue['long_description']); ?></p>
-                                    <p><strong>Open Date:</strong> <?= htmlspecialchars($issue['open_date']); ?></p>
-                                    <p><strong>Close Date:</strong> <?= htmlspecialchars($issue['close_date']); ?></p>
-                                    <p><strong>Priority:</strong> <?= htmlspecialchars($issue['priority']); ?></p>
-                                    <p><strong>Organization:</strong> <?= htmlspecialchars($issue['org']); ?></p>
-                                    <p><strong>Project:</strong> <?= htmlspecialchars($issue['project']); ?></p>
-                                    <p><strong>Person ID:</strong> <?= htmlspecialchars($issue['per_id']); ?></p>
-                                </div>
+                                <p><strong>ID:</strong> <?= htmlspecialchars($issue['id']); ?></p>
+                                <p><strong>Short Description:</strong> <?= htmlspecialchars($issue['short_description']); ?></p>
+                                <p><strong>Long Description:</strong> <?= htmlspecialchars($issue['long_description']); ?></p>
+                                 <p><strong>Open Date:</strong> <?= htmlspecialchars($issue['open_date']); ?></p>
+                                <p><strong>Close Date:</strong> <?= htmlspecialchars($issue['close_date']); ?></p>
+                                <p><strong>Priority:</strong> <?= htmlspecialchars($issue['priority']); ?></p>
+                                <p><strong>Organization:</strong> <?= htmlspecialchars($issue['org']); ?></p>
+                                <p><strong>Project:</strong> <?= htmlspecialchars($issue['project']); ?></p>
+                                <p><strong>Person ID:</strong> <?= htmlspecialchars($issue['per_id']); ?></p>
+
+                                    <hr>
+                                    <h5>Comments</h5>
+
+                                <?php
+                                // Fetch comments for this issue
+                                $comment_stmt = $pdo->prepare("SELECT c.*, p.fname, p.lname 
+                                   FROM iss_comments c 
+                                   JOIN iss_persons p ON c.per_id = p.id 
+                                   WHERE c.iss_id = ? 
+                                   ORDER BY c.posted_date DESC");
+                                $comment_stmt->execute([$issue['id']]);
+                                 $comments = $comment_stmt->fetchAll(PDO::FETCH_ASSOC);
+                                ?>
+
+                                <?php
+                                $editing_comment_id = $_GET['edit_comment'] ?? null;
+                                ?>
+
+<?php
+$editing_comment_id = $_GET['edit_comment'] ?? null;
+?>
+
+<?php foreach ($comments as $comment): ?>
+    <div class="border rounded p-2 mb-2">
+        <small class="text-muted">
+            <?= htmlspecialchars($comment['fname'] . ' ' . $comment['lname']) ?> 
+            on <?= htmlspecialchars($comment['posted_date']) ?>
+        </small>
+
+        <?php if ($editing_comment_id == $comment['id'] && ($_SESSION['user_id'] == $comment['per_id'] || $_SESSION['admin'] == "Y")): ?>
+            <!-- If editing this comment, show editable form -->
+            <form method="post">
+                <input type="hidden" name="comment_id" value="<?= $comment['id'] ?>">
+                <input type="hidden" name="issue_id" value="<?= $issue['id'] ?>">
+                <div class="mb-2">
+                    <label>Short Comment</label>
+                    <input type="text" name="short_comment" value="<?= htmlspecialchars($comment['short_comment']) ?>" class="form-control">
+                </div>
+                <div class="mb-2">
+                    <label>Long Comment</label>
+                    <textarea name="long_comment" class="form-control" rows="3"><?= htmlspecialchars($comment['long_comment']) ?></textarea>
+                </div>
+                <button type="submit" name="save_comment_edit" class="btn btn-primary btn-sm">Save Changes</button>
+            </form>
+        <?php else: ?>
+            <!-- Normal display -->
+            <p><strong>Short:</strong> <?= htmlspecialchars($comment['short_comment']) ?></p>
+            <p><strong>Long:</strong><br><?= nl2br(htmlspecialchars($comment['long_comment'])) ?></p>
+
+            <?php if ($_SESSION['user_id'] == $comment['per_id'] || $_SESSION['admin'] == "Y"): ?>
+                <form method="post" class="d-inline">
+                    <input type="hidden" name="comment_id" value="<?= $comment['id'] ?>">
+                    <input type="hidden" name="issue_id" value="<?= $issue['id'] ?>">
+                    <button type="submit" name="edit_comment_modal" class="btn btn-sm btn-warning">Edit</button>
+                </form>
+                <form method="post" class="d-inline" onsubmit="return confirm('Delete this comment?');">
+                    <input type="hidden" name="comment_id" value="<?= $comment['id'] ?>">
+                    <input type="hidden" name="issue_id" value="<?= $issue['id'] ?>">
+                    <button type="submit" name="delete_comment" class="btn btn-sm btn-danger">Delete</button>
+                </form>
+            <?php endif; ?>
+        <?php endif; ?>
+    </div>
+<?php endforeach; ?>
+
+
+    <hr>
+
+    <h6>Add a Comment</h6>
+    <form method="post">
+        <input type="hidden" name="issue_id" value="<?= $issue['id'] ?>">
+        <div class="mb-2">
+            <label for="short_comment<?= $issue['id']; ?>" class="form-label">Short Comment</label>
+            <input type="text" name="short_comment" id="short_comment<?= $issue['id']; ?>" class="form-control" required>
+        </div>
+        <div class="mb-2">
+            <label for="long_comment<?= $issue['id']; ?>" class="form-label">Long Comment</label>
+            <textarea name="long_comment" id="long_comment<?= $issue['id']; ?>" class="form-control" rows="3" required></textarea>
+        </div>
+        <button type="submit" name="add_comment" class="btn btn-primary btn-sm">Add Comment</button>
+    </form>
+</div>
+
                             </div>
                         </div>
                     </div>
@@ -333,6 +573,21 @@ $issues = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const openIssueId = urlParams.get('issue_id');
+
+    if (openIssueId) {
+        var myModal = new bootstrap.Modal(document.getElementById('readIssue' + openIssueId));
+        myModal.show();
+    }
+});
+</script>
+</body>
+</html>
+
 </body>
 </html>
 
